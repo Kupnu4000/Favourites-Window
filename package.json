@@ -1,0 +1,17 @@
+{
+  "name": "com.sergei_liubich.favourites_window",
+  "version": "1.0.0",
+  "displayName": "Favourites Window",
+  "unity": "2019.1",
+  "keywords": [
+    "favourites",
+    "favorites",
+    "bookmark"
+  ],
+  "author": {
+    "name": "Sergei Liubich",
+    "email": "kupnu4000@gmail.com"
+  },
+  "type": "tool",
+  "description": "An Editor window for bookmarking project assets\n\nWindow > Favourites"
+}
