@@ -9,7 +9,7 @@ using MouseButton = UnityEngine.UIElements.MouseButton;
 using Object = UnityEngine.Object;
 
 
-namespace Editor {
+namespace SergeiLiubich.FavouritesWindow.Editor {
 	public sealed class FavouritesWindow : EditorWindow, IHasCustomMenu {
 		private const string EditorPrefsKey = "Favourites_fa5a5c9c";
 
@@ -124,7 +124,12 @@ namespace Editor {
 
 			AssetInfo assetInfo = _favourites[listView.selectedIndex];
 			string    assetPath = assetInfo.Path;
-			GUILayout.Label(new GUIContent(assetPath, assetInfo.Icon, assetPath));
+
+			GUILayout.Label(new GUIContent(
+					assetPath,
+					assetInfo.Icon,
+					assetPath),
+				new GUIStyle(EditorStyles.label) { fixedHeight = EditorGUIUtility.singleLineHeight });
 		}
 
 		public void AddItemsToMenu (GenericMenu menu) {
@@ -138,7 +143,9 @@ namespace Editor {
 		private static void SelectAsset (AssetInfo assetInfo) {
 			Object asset = assetInfo.Object;
 			Selection.activeObject = asset;
-			EditorGUIUtility.PingObject(asset);
+
+			// FIXME NullReferenceException
+			// EditorGUIUtility.PingObject(asset.GetInstanceID());
 		}
 
 		private static void ClearFavourites () {

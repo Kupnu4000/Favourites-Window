@@ -1,6 +1,6 @@
 {
     "name": "sergei_liubich.favourites_window.editor",
-    "rootNamespace": "",
+    "rootNamespace": "SergeiLiubich.FavouritesWindow.Editor",
     "references": [],
     "includePlatforms": [
         "Editor"
