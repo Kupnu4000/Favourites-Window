@@ -5,7 +5,7 @@ using UnityEngine.UIElements;
 using Object = UnityEngine.Object;
 
 
-namespace Editor {
+namespace sergei_liubich.favourites_window.Editor {
 	public sealed class FavouritesListItem : VisualElement {
 		private Label nameLabel;
 		private Image iconImage;

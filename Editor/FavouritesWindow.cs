@@ -5,7 +5,7 @@ using UnityEngine.UIElements;
 using Object = UnityEngine.Object;
 
 
-namespace Editor {
+namespace sergei_liubich.favourites_window.Editor {
 	internal sealed class FavouritesWindow : EditorWindow, IHasCustomMenu {
 		private Favourites favourites;
 

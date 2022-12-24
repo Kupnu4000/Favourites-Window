@@ -7,8 +7,7 @@ using UnityEngine;
 using Object = UnityEngine.Object;
 
 
-namespace Editor {
-	// TODO convert to Collection<AssetInfo>
+namespace sergei_liubich.favourites_window.Editor {
 	internal sealed class Favourites {
 		public const string EditorPrefsKey = "Favourites_fa5a5c9c";
 
@@ -87,7 +86,6 @@ namespace Editor {
 			Entries.Sort((a, b) => string.Compare(Path.GetExtension(a.Path), Path.GetExtension(b.Path), StringComparison.OrdinalIgnoreCase));
 		}
 
-		// TODO what
 		public void Clear () {
 			RemoveInternal(Entries, true, true);
 			Entries.Clear();

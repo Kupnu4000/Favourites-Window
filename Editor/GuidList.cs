@@ -4,7 +4,7 @@ using UnityEditor;
 using UnityEngine;
 
 
-namespace Editor {
+namespace sergei_liubich.favourites_window.Editor {
 	[Serializable]
 	public sealed class GuidList {
 		public List <string> guids;

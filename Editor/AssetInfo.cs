@@ -2,7 +2,7 @@
 using UnityEngine;
 
 
-namespace Editor {
+namespace sergei_liubich.favourites_window.Editor {
 	public sealed class AssetInfo {
 		public AssetInfo (string guid) => Guid = guid;
 
