@@ -1,24 +1,21 @@
 using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
-using MouseButton = UnityEngine.UIElements.MouseButton;
 using Object = UnityEngine.Object;
 
 
-namespace SergeiLiubich.FavouritesWindow.Editor {
-	public sealed class FavouritesWindow : EditorWindow, IHasCustomMenu {
-		private const string EditorPrefsKey = "Favourites_fa5a5c9c";
+namespace Editor {
+	internal sealed class FavouritesWindow : EditorWindow, IHasCustomMenu {
+		private Favourites favourites;
 
 		private static Texture _windowIcon;
 		private static Texture _folderIcon;
 
-		private static Favourites _favourites;
-		private        ListView   listView;
+		private ListView listView;
 
+		private static event Action <Object[]> AddToFavouritesInitiated;
+		private static event Action <string[]> AssetsDeleted;
 
 		private static void LoadIcons () {
 			_windowIcon ??= EditorGUIUtility.Load("d_FolderFavorite Icon") as Texture;
@@ -32,8 +29,8 @@ namespace SergeiLiubich.FavouritesWindow.Editor {
 
 		[MenuItem("Assets/Add to Favourites", priority = 9999)]
 		private static void AddToFavourites (MenuCommand command) {
-			foreach (Object selectedObject in Selection.objects)
-				_favourites.Add(new[] { selectedObject });
+			Object[] selection = Selection.GetFiltered(typeof(Object), SelectionMode.Assets);
+			AddToFavouritesInitiated?.Invoke(selection);
 		}
 
 		private void OnEnable () {
@@ -41,88 +38,77 @@ namespace SergeiLiubich.FavouritesWindow.Editor {
 
 			titleContent = new GUIContent("Favourites") { image = _windowIcon };
 
-			Favourites.Load(out _favourites);
-			_favourites.Changed += OnFavouritesChanged;
+			Favourites.Load(out favourites);
 
 			EditorApplication.projectChanged -= OnProjectChanged;
 			EditorApplication.projectChanged += OnProjectChanged;
+
+			AddToFavouritesInitiated += favourites.Add;
+			AssetsDeleted            += favourites.OnAssetsDeleted;
+			favourites.Changed       += OnFavouritesChanged;
 
 			CreteListView();
 		}
 
 		private void OnDisable () {
 			EditorApplication.projectChanged -= OnProjectChanged;
-			_favourites.Changed              -= OnFavouritesChanged;
+
+			AddToFavouritesInitiated -= favourites.Add;
+			AssetsDeleted            -= favourites.OnAssetsDeleted;
+			favourites.Changed       -= OnFavouritesChanged;
 		}
 
 		private void CreteListView () {
-			listView = new ListView(_favourites.Entries, (int)EditorGUIUtility.singleLineHeight, MakeListItem, BindListItem) {
-				style = {
-					flexGrow     = 1f,
-					marginBottom = EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing
-				},
-				selectionType = SelectionType.None,
-				showBorder    = true
-			};
+			listView = new ListView(
+				favourites.Entries,
+				(int)EditorGUIUtility.singleLineHeight,
+				CreateListItem,
+				BindListItem
+			);
 
-			listView.onSelectionChange += OnListSelectionChanged;
-			listView.RegisterCallback <KeyDownEvent>(OnDeleteKeyPressed);
+			listView.selectionType  = SelectionType.None;
+			listView.style.flexGrow = 1f;
+			// listView.style.paddingBottom = EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
+			// listView.style.marginBottom = EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
+			listView.showBorder  = true;
+			listView.reorderable = false;
 
 			rootVisualElement.Add(listView);
 		}
 
-		private VisualElement MakeListItem () {
+		private FavouritesListItem CreateListItem () {
 			FavouritesListItem listItem = new FavouritesListItem();
-			listItem.OnSelected += OnListItemSelected;
+
+			listItem.RemovalRequested += OnItemRemovalRequested;
+			listItem.Selected         += OnItemSelected;
 
 			return listItem;
 		}
 
-		private static void BindListItem (VisualElement element, int index) {
-			if (index >= _favourites.Count)
-				return;
-
-			AssetInfo assetInfo = _favourites[index];
-
+		private void BindListItem (VisualElement element, int index) {
 			FavouritesListItem listItem = (FavouritesListItem)element;
-
-			listItem.SetData(assetInfo.Name, assetInfo.Icon, index);
+			listItem.SetAssetInfo(favourites[index]);
 		}
 
-		private static void OnListSelectionChanged (IEnumerable <object> selection) {
-			SelectAsset((AssetInfo)selection.First());
+		private void OnItemSelected (FavouritesListItem item) {
+			listView.ClearSelection();
+			int index = listView.itemsSource.IndexOf(item.AssetInfo);
+			listView.SetSelection(index);
 		}
-
-		private void OnListItemSelected (int itemIndex) {
-			listView.SetSelectionWithoutNotify(new[] { itemIndex });
-			SelectAsset(_favourites[itemIndex]);
-		}
-
-		private void OnFavouritesChanged () {
-			listView.Refresh();
-		}
-
-		private void OnDeleteKeyPressed (KeyDownEvent @event) {
-			if (@event.keyCode != KeyCode.Delete || listView.selectedIndex < 0 || focusedWindow != this)
-				return;
-
-			_favourites.RemoveAt(listView.selectedIndex);
-		
-			@event.StopImmediatePropagation();
-			Event.current.Use();
-		}
-
-		private void OnProjectChanged () => listView.Refresh();
 
 		private void OnGUI () {
 			if (listView.selectedIndex < 0)
 				return;
 
+			DrawPrefabPath();
+		}
+
+		private void DrawPrefabPath () {
 			GUILayout.FlexibleSpace();
 
 			EditorGUIUtility.SetIconSize(new Vector2(16, 16));
 
-			AssetInfo assetInfo = _favourites[listView.selectedIndex];
+			AssetInfo assetInfo = favourites[listView.selectedIndex];
 			string    assetPath = assetInfo.Path;
 
 			GUILayout.Label(new GUIContent(
@@ -130,6 +116,10 @@ namespace SergeiLiubich.FavouritesWindow.Editor {
 					assetInfo.Icon,
 					assetPath),
 				new GUIStyle(EditorStyles.label) { fixedHeight = EditorGUIUtility.singleLineHeight });
+		}
+
+		private void OnItemRemovalRequested (AssetInfo assetInfo) {
+			favourites.Remove(assetInfo);
 		}
 
 		public void AddItemsToMenu (GenericMenu menu) {
@@ -140,305 +130,29 @@ namespace SergeiLiubich.FavouritesWindow.Editor {
 			);
 		}
 
-		private static void SelectAsset (AssetInfo assetInfo) {
-			Object asset = assetInfo.Object;
-			Selection.activeObject = asset;
-
-			// FIXME NullReferenceException
-			// EditorGUIUtility.PingObject(asset.GetInstanceID());
+		private void OnFavouritesChanged () {
+			listView.Refresh();
 		}
 
-		private static void ClearFavourites () {
+		private void OnProjectChanged () {
+			listView.Refresh();
+		}
+
+		private void ClearFavourites () {
 			const string dialogTitle   = "Clear All Favourites?";
 			const string dialogMessage = "Are you sure you want to clear all Favourites?\nYou cannot undo this action.";
 
 			if (EditorUtility.DisplayDialog(dialogTitle, dialogMessage, "Yes", "No") == false)
 				return;
 
-			_favourites.Clear();
+			favourites.Clear();
 		}
 
-		private sealed class FavouritesAssetPostprocessor : AssetPostprocessor {
+
+		internal sealed class FavouritesAssetPostprocessor : AssetPostprocessor {
 			private static void OnPostprocessAllAssets (string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths) {
 				if (deletedAssets.Length > 0)
-					_favourites?.OnAssetsDeleted(deletedAssets);
-			}
-		}
-
-		private sealed class FavouritesListItem : VisualElement {
-			private readonly Label nameLabel;
-			private readonly Image iconImage;
-			private          int   index;
-
-			private bool isDoubleClicked;
-
-			public event Action <int> OnSelected;
-
-
-			public FavouritesListItem () {
-				style.flexDirection = FlexDirection.Row;
-
-				nameLabel = new Label { pickingMode = PickingMode.Ignore };
-
-				iconImage = new Image {
-					style = {
-						width      = 16,
-						height     = 16,
-						flexShrink = 0
-					},
-					pickingMode = PickingMode.Ignore
-				};
-
-				Add(iconImage);
-				Add(nameLabel);
-
-				RegisterCallback <MouseDownEvent>(OnMouseDown);
-				RegisterCallback <MouseUpEvent>(OnMouseUp);
-				RegisterCallback <MouseMoveEvent>(OnMouseMove);
-			}
-
-			public void SetData (string itemName, Texture icon, int index) {
-				iconImage.image = icon;
-				nameLabel.text  = itemName;
-				this.index      = index;
-			}
-
-			private void OnMouseDown (MouseDownEvent @event) {
-				switch ((MouseButton)@event.button) {
-					case MouseButton.LeftMouse:
-						if (@event.clickCount > 1) {
-							isDoubleClicked = true;
-							break;
-						}
-
-						KillEvent(@event);
-						break;
-					case MouseButton.RightMouse:
-					case MouseButton.MiddleMouse:
-					default:
-						break;
-				}
-			}
-
-			private void OnMouseUp (MouseUpEvent @event) {
-				switch ((MouseButton)@event.button) {
-					case MouseButton.LeftMouse:
-						if (isDoubleClicked) {
-							OnDoubleClicked();
-							break;
-						}
-
-						OnSelected?.Invoke(index);
-
-						KillEvent(@event);
-						break;
-					case MouseButton.RightMouse:
-						ShowPopupMenu();
-
-						KillEvent(@event);
-						break;
-					case MouseButton.MiddleMouse:
-					default:
-						break;
-				}
-			}
-
-			private void OnMouseMove (MouseMoveEvent @event) {
-				if (@event.button != (int)MouseButton.LeftMouse)
-					return;
-
-				if (Event.current.type != EventType.MouseDrag)
-					return;
-
-				DragAndDrop.PrepareStartDrag();
-				DragAndDrop.objectReferences = new[] { _favourites[index].Object };
-				DragAndDrop.StartDrag(nameLabel.text);
-			}
-
-			private void OnDoubleClicked () {
-				AssetInfo assetInfo = _favourites[index];
-
-				if (AssetDatabase.IsValidFolder(assetInfo.Path)) {
-					EditorApplication.ExecuteMenuItem("Assets/Show in Explorer");
-				} else {
-					AssetDatabase.OpenAsset(assetInfo.InstanceId);
-				}
-
-				isDoubleClicked = false;
-			}
-
-			private void ShowPopupMenu () {
-				GenericMenu menu = new GenericMenu();
-
-				menu.AddItem(new GUIContent("Properties..."),    false, ShowProperties);
-				menu.AddItem(new GUIContent("Show in Explorer"), false, ShowInExplorer);
-				menu.AddSeparator(string.Empty);
-				menu.AddItem(new GUIContent("Remove"), false, Remove);
-
-				menu.ShowAsContext();
-
-				Event.current.Use();
-			}
-
-			private void Remove () {
-				AssetInfo assetInfo = _favourites[index];
-
-				const string dialogTitle   = "Remove from Favourites?";
-				string       dialogMessage = $"{assetInfo.Path}\nYou cannot undo this action.";
-
-				if (EditorUtility.DisplayDialog(dialogTitle, dialogMessage, "Yes", "No") == false)
-					return;
-
-				_favourites.RemoveAt(index);
-			}
-
-			private void ShowProperties () {
-				Object[] currentSelection = Selection.objects;
-
-				AssetInfo assetInfo = _favourites[index];
-				Selection.objects = new[] { assetInfo.Object };
-				EditorApplication.ExecuteMenuItem("Assets/Properties...");
-
-				Selection.objects = currentSelection;
-			}
-
-			private void ShowInExplorer () {
-				Object[] currentSelection = Selection.objects;
-
-				AssetInfo assetInfo = _favourites[index];
-				Selection.objects = new[] { assetInfo.Object };
-				EditorApplication.ExecuteMenuItem("Assets/Show in Explorer");
-
-				Selection.objects = currentSelection;
-			}
-
-			private static void KillEvent (EventBase @event) {
-				@event.StopImmediatePropagation();
-				Event.current.Use();
-			}
-		}
-
-		private sealed class Favourites {
-			public event Action Changed;
-
-			public readonly List <AssetInfo> Entries;
-
-			public int Count => Entries.Count;
-
-			public AssetInfo this [int index] => Entries[index];
-
-			private Favourites (IEnumerable <string> guids) {
-				Entries = guids.Select(guid => new AssetInfo(guid))
-				               .Where(entry => AssetDatabase.GetMainAssetTypeAtPath(entry.Path) != null)
-				               .ToList();
-				Sort();
-			}
-
-			public void Add (IEnumerable <Object> objects) {
-				AddInternal(objects, true, false);
-			}
-
-			private void AddInternal (IEnumerable <Object> objects, bool save, bool silent) {
-				List <string> guids = GuidList.GetGuids();
-
-				bool isChanged = false;
-
-				foreach (Object obj in objects) {
-					string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(obj));
-
-					if (guids.Contains(guid))
-						continue;
-
-					Entries.Add(new AssetInfo(guid));
-					guids.Add(guid);
-
-					isChanged = true;
-				}
-
-				if (isChanged == false)
-					return;
-
-				Sort();
-
-				if (save)
-					Save(guids);
-
-				if (silent == false)
-					Changed?.Invoke();
-			}
-
-			public void RemoveAt (int index) {
-				RemoveInternal(new[] { Entries[index] }, true, false);
-			}
-
-			private void RemoveInternal (IEnumerable <AssetInfo> assetInfos, bool save, bool silent) {
-				List <string> guids = GuidList.GetGuids();
-
-				foreach (AssetInfo assetInfo in assetInfos.ToArray()) {
-					Entries.Remove(assetInfo);
-					guids.Remove(assetInfo.Guid);
-				}
-
-				if (save)
-					Save(guids);
-
-				if (silent == false)
-					Changed?.Invoke();
-			}
-
-			private void Sort () {
-				Entries.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
-
-				Entries.Sort((a, b) => string.Compare(Path.GetExtension(a.Path), Path.GetExtension(b.Path), StringComparison.OrdinalIgnoreCase));
-			}
-
-			public void Clear () {
-				RemoveInternal(Entries, true, true);
-				Entries.Clear();
-
-				Changed?.Invoke();
-			}
-
-			private static void Save (List <string> guids) {
-				string json = JsonUtility.ToJson(new GuidList(guids), true);
-				EditorPrefs.SetString(EditorPrefsKey, json);
-			}
-
-			public static void Load (out Favourites favourites) {
-				favourites = new Favourites(GuidList.GetGuids());
-				favourites.Changed?.Invoke();
-			}
-
-			public void OnAssetsDeleted (string[] deletedAssets) {
-				IEnumerable <AssetInfo> deletedAssetInfos = Entries.Where(entry => deletedAssets.Contains(entry.Path));
-
-				RemoveInternal(deletedAssetInfos, true, false);
-			}
-		}
-
-		private sealed class AssetInfo {
-			public AssetInfo (string guid) => Guid = guid;
-
-			public string  Guid       {get;}
-			public string  Path       => AssetDatabase.GUIDToAssetPath(Guid);
-			public string  Name       => System.IO.Path.GetFileNameWithoutExtension(Path);
-			public Texture Icon       => AssetDatabase.GetCachedIcon(Path);
-			public Object  Object     => AssetDatabase.LoadMainAssetAtPath(Path);
-			public int     InstanceId => Object.GetInstanceID();
-		}
-
-		[Serializable]
-		private sealed class GuidList {
-			public List <string> guids;
-
-			public GuidList (List <string> guids) {
-				this.guids = guids;
-			}
-
-			public static List <string> GetGuids () {
-				return EditorPrefs.HasKey(EditorPrefsKey)
-					? JsonUtility.FromJson <GuidList>(EditorPrefs.GetString(EditorPrefsKey)).guids
-					: new List <string>();
+					AssetsDeleted?.Invoke(deletedAssets);
 			}
 		}
 	}
