@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -97,10 +99,26 @@ namespace sergei_liubich.favourites_window.Editor {
 		}
 
 		private void Select () {
-			EditorGUIUtility.PingObject(AssetInfo.InstanceId);
+			PingAssetInProjectBrowsers();
 			Selection.activeObject = AssetInfo.Asset;
-
 			Selected?.Invoke(this);
+		}
+
+		private void PingAssetInProjectBrowsers () {
+			Type       projectBrowserType    = typeof(EditorGUIUtility).Assembly.GetType("UnityEditor.ProjectBrowser");
+			MethodInfo getAllProjectBrowsers = projectBrowserType.GetMethod("GetAllProjectBrowsers", BindingFlags.Public | BindingFlags.Static);
+
+			if (getAllProjectBrowsers == null)
+				return;
+
+			foreach (object projectBrowser in (IEnumerable)getAllProjectBrowsers.Invoke(null, null)) {
+				MethodInfo frameObject = projectBrowser.GetType().GetMethod("FrameObject", BindingFlags.Public);
+
+				if (frameObject == null)
+					continue;
+
+				frameObject.Invoke(projectBrowser, new object[] { AssetInfo.InstanceId, true });
+			}
 		}
 
 		private void Choose () {
